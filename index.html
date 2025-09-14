@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Click Trap — Safe Malware Simulation (Classroom Demo)</title>
+  <style>
+    :root { --bg1:#0d0d0d; --bg2:#151515; --text:#f6f7f9; --muted:#9aa0a6; }
+    html, body { height:100%; margin:0; background:radial-gradient(circle at 30% 20%, var(--bg2), var(--bg1)); color:var(--text); font-family:system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; overflow:hidden; }
+    .container { display:grid; place-items:center; height:100%; text-align:center; padding:2rem; }
+    h1 { font-size:clamp(1.6rem, 2.6vw + 1rem, 3rem); margin:0.2rem 0 0.6rem; letter-spacing:0.04em; text-shadow:0 2px 14px rgba(255,59,59,0.35); }
+    .subtitle { color:var(--muted); margin-bottom:1rem; max-width:65ch; }
+    .panel { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:1.2rem 1.4rem; box-shadow:0 10px 30px rgba(0,0,0,0.35); backdrop-filter:blur(6px); display:inline-grid; gap:0.75rem; min-width:min(760px,95vw); position:relative; z-index:10; }
+    .controls { display:flex; gap:0.6rem; flex-wrap:wrap; justify-content:center; }
+    button { appearance:none; border:0; border-radius:999px; padding:0.9rem 1.25rem; font-size:1rem; font-weight:800; cursor:pointer; transition:transform .08s ease, box-shadow .2s ease, background .2s ease; box-shadow:0 8px 20px rgba(0,0,0,0.25); }
+    .start { background:linear-gradient(135deg,#ff3b3b,#ff7a3b); color:white; }
+    .start:hover { transform:translateY(-1px); }
+    .note { font-size:0.95rem; color:var(--muted); }
+
+    .ticker { position:fixed; left:0; right:0; bottom:0; background:repeating-linear-gradient(45deg,#2d2d2d,#2d2d2d 10px,#262626 10px,#262626 20px); color:#ffd93b; font-weight:800; letter-spacing:0.06em; padding:0.35rem 0; border-top:1px solid rgba(255,255,255,0.12); overflow:hidden; z-index:9; }
+    .marquee { display:inline-block; white-space:nowrap; animation:slide 14s linear infinite; }
+    @keyframes slide { from { transform:translateX(100vw); } to { transform:translateX(-100%); } }
+
+    .strobe { animation:strobe 120ms steps(2,end) infinite; }
+    @keyframes strobe { 0% { background:#ff002b; } 100% { background:#000000; } }
+
+    .floaty { position:fixed; font-weight:900; color:#000; text-shadow:0 2px 0 #fff, 0 0 16px rgba(255,255,0,0.55); user-select:none; pointer-events:none; opacity:0.95; transform:translate(-50%,-50%) rotate(-6deg); animation:drift 9s ease-in-out infinite; will-change:transform; z-index:5; }
+    @keyframes drift { 0% { transform:translate(var(--xStart),var(--yStart)) rotate(-8deg) scale(var(--scale)); } 50% { transform:translate(calc(var(--xStart) + var(--dx)), calc(var(--yStart) + var(--dy))) rotate(8deg) scale(calc(var(--scale) * 1.08)); } 100% { transform:translate(var(--xStart),var(--yStart)) rotate(-8deg) scale(var(--scale)); } }
+
+    .speech { position:fixed; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#fff; padding:.35rem .6rem; border-radius:10px; font-weight:700; backdrop-filter:blur(6px); text-shadow:none; pointer-events:none; animation:pop 300ms ease-out forwards; z-index:6; }
+    @keyframes pop { from { transform:scale(.6); opacity:0; } to { transform:scale(1); opacity:1; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="panel" role="group" aria-label="Simulation controls">
+      <div>
+        <span class="badge">SAFE SIMULATION</span>
+        <h1>Click Trap — Classroom Malware Demo</h1>
+        <p class="subtitle">A harmless browser-only simulation. Clicks trigger pop-ups, flashing, and a rapidly growing swarm of emojis and student names. <strong>No files are touched.</strong> Close the tab or use the teacher shortcut to end.</p>
+      </div>
+      <div class="controls">
+        <button class="start" id="btnStart">Start Demo</button>
+      </div>
+      <p class="note">Tip: Allow pop-ups if prompted. For full effect, press <strong>F11</strong> for fullscreen before starting.</p>
+    </div>
+  </div>
+  <div class="ticker" aria-live="polite" aria-atomic="true">
+    <div class="marquee">⚠️ SAFE simulation for educational purposes — nothing is installed. Close the tab or use the teacher shortcut (Shift + S ×3) to end. ⚠️&nbsp;&nbsp;</div>
+  </div>
+
+  <!-- Background audio (local files; keep in same folder as this HTML) -->
+  <audio id="rizzler" src="[Lyrics] Rizzler (Gyat, I was in Ohio before I met you).mp3"></audio>
+  <audio id="rickroll" src="Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) (1).mp3" loop></audio>
+
+  <script>
+    // ====== Config & Data ======
+    const EMOJIS = ['⚠️','😵','🤖','🦠','💥','🚨','😬','🧠','🔐','🧪','🕳️','🌀','💣','🧯','👀','❗','📛','🧲','🧨','🪲'];
+    const NAMES = [
+      "Anaya","Alexander","Kaleab","Siona","Griffin","Alexander","Ateme","Kaylee","Ana","Jelena",
+      "Audrey","Maya","Jentry","Lila","Amy","Gavin","Aviana","Alena","Ella","Parker",
+      "Bryce","Edwin","Aanya","Ishaan","Anderzon","Catherine","Naya","Aarna","Niam","Samuel",
+      "Jingcheng","Eileen","Grace","Sameera","Evelyn","Abel","Phoebe","Julia","Marylee","Maxton",
+      "Alexander","Rose","Charles","Emilie","Major","Derrick","Lane","Martin","Michelle","Diya",
+      "Gabriella","Graham","Zarina","Libby","Madeline","William","Ethan","Bryan","Aidan","Aspen",
+      "Anaya","Olivia","Tyler","Brayden","Theodore","Jackson","Jacob","Joseph","Zed","Mariana",
+      "Irem","Aydin","Iyad","Alexandra","Kaden","Anish","Benjamin","Jakob","George","Parker",
+      "Savannah","Emery","Karena","Priscilla","Emilia","Lauren","Jefferson","Ariella","William","Benjamin",
+      "Ryan","Stefan","Mark","Claire","Jonathan","Andy","Nathan","Camila","Morris","Tanvi",
+      "Charlotte","Matthew","Andrew","Charlotte","Emilia","Bennett","Hamilton","Fiona","Adrien","Andrew",
+      "Alejandra","Charles","Natnael","Elliot","Ashanti","Celso","Holden","Nolan","Ella","Eliana",
+      "Sanjay","Zenia","Pablo","Anthony","Natalie","Nathaniel","Ethan","Lorelei","Yafet","Gideon",
+      "Ayden","Jordan","Isabella","Alexandros","Filippo","Cecilia","Carmen","Mason","Abdulhadi","Lucas",
+      "Safa","Lilliana","Adam","Lucas","Monique","Leonardo","Julia","Giuliana","Blake","Naaya",
+      "Joaquin","Kyle","Victor","Olivia","Isabella","Juliana","Zachary","Liam","Marom","Lydia",
+      "Amen","Nayan","Bella","Mia","Irene","Emily","Clara","Ernesto","Isabella","Monika",
+      "Layla","Liliana","Joseph","Sebastian","Cesar","JT","Lincoln","Alex","Fiona","Yuelian",
+      "Piper","Stirling","Cynthia","Tallon","Logan","Beckett","Ethan","Emma","Leo","David",
+      "Aven","Mason","Emery","Angela","Lanchen","Yen","Yun","Chloe","Zoe","Angela",
+      "Sofia","Gabriel","Ruth","Ai-My","Helen","Aria"
+    ];
+    const PHRASES = [
+      "Click Trap Activated! 🎯",
+      "Think Before You Click 🧠",
+      "This Is How Trojans Spread 🐴",
+      "Links Can Be Tricky 🔎",
+      "Pop-Ups Love Taps 🙃",
+      "Check Before You Download 🔐",
+      "When In Doubt, Close It 🚪",
+      "Report Suspicious Stuff 📣",
+      "Strange Permissions? Nope 🚫",
+      "Hover To Inspect Links 🖱️",
+      "Look For HTTPS 🔒",
+      "Phish Love Curiosity 🎣",
+      "Slow Down = Safe Down 🐢",
+      "Trust, But Verify ✅",
+      "Ask An Adult If Unsure 🧑🏽‍🏫"
+    ];
+
+    // ====== State ======
+    const state = {
+      running: false, level: 0, maxLevel: 12,
+      popupTimer: null, floatyLimit: 700, teacherKeySeq: [], lastKeyTime: 0
+    };
+
+    // ====== DOM ======
+    const btnStart = document.getElementById("btnStart");
+    const rizzler = document.getElementById("rizzler");
+    const rickroll = document.getElementById("rickroll");
+
+    // ====== Helpers ======
+    const rand = (min,max)=>Math.random()*(max-min)+min;
+    const choice = arr => arr[Math.floor(Math.random()*arr.length)];
+    function flashOn(){ document.body.classList.add('strobe'); }
+    function flashOff(){ document.body.classList.remove('strobe'); }
+
+    function spawnFloaty(x, y) {
+      // keep count sane for older Chromebooks
+      const existing = document.querySelectorAll('.floaty').length;
+      if (existing > state.floatyLimit) {
+        const oldest = document.querySelector('.floaty');
+        if (oldest) oldest.remove();
+      }
+      const f = document.createElement('div');
+      f.className = 'floaty';
+      const size = rand(22, 64) + state.level * 1.2;
+      const left = (x ?? rand(40, innerWidth - 40)) + 'px';
+      const top  = (y ?? rand(40, innerHeight - 80)) + 'px';
+      f.style.left = left; f.style.top = top; f.style.fontSize = size + 'px';
+      f.style.setProperty('--xStart', left);
+      f.style.setProperty('--yStart', top);
+      f.style.setProperty('--dx', rand(-160,160) + 'px');
+      f.style.setProperty('--dy', rand(-140,140) + 'px');
+      f.style.setProperty('--scale', (rand(0.9,1.6)).toFixed(2));
+      // 60% emoji, 40% student name
+      f.textContent = Math.random() < 0.6 ? choice(EMOJIS) : choice(NAMES);
+      document.body.appendChild(f);
+    }
+
+    function spawnSpeech(x,y,text) {
+      const s = document.createElement('div');
+      s.className = 'speech';
+      s.textContent = text || choice(PHRASES);
+      s.style.left = (x || rand(60, innerWidth - 60)) + 'px';
+      s.style.top  = (y || rand(60, innerHeight - 60)) + 'px';
+      document.body.appendChild(s);
+      setTimeout(() => { s.style.opacity = '0'; s.style.transition = 'opacity 1s'; setTimeout(()=>s.remove(), 1000); }, 2800);
+    }
+
+    function openPopup() {
+      let w;
+      try {
+        w = window.open('', '', 'width=420,height=320,menubar=no,toolbar=no,location=no,status=no');
+      } catch(e) { return; }
+      if (!w) return; // likely blocked
+      const label = choice(PHRASES);
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Click Trap</title>
+        <style>
+          html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,Segoe UI,Arial}
+          .wrap{display:grid;place-items:center;height:100%;text-align:center}
+          h1{font-size:1.6rem;margin:0 0 .2rem;text-shadow:0 0 18px #ff0}
+          p{opacity:.85;margin:.2rem 0}
+          .blink{animation:bl 180ms steps(2,end) infinite}
+          @keyframes bl{50%{opacity:.2}}
+          .btn{margin-top:1rem;background:#111;border:1px solid #f55;color:#fff;padding:.5rem .8rem;border-radius:10px;cursor:pointer}
+        </style></head>
+        <body>
+          <div class="wrap">
+            <div>
+              <h1 class="blink">${label}</h1>
+              <p>Safe classroom simulation.</p>
+              <button class="btn" onclick="window.close()">OK</button>
+            </div>
+          </div>
+          <script>
+            let dx=6,dy=5;
+            setInterval(()=>{try{window.moveBy(dx,dy)}catch(e){}dx=-dx;dy=-dy;document.body.style.background='#'+Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0')},360);
+            setTimeout(()=>{try{window.close()}catch(e){}},15000);
+          <\/script>
+        </body></html>`;
+      w.document.open(); w.document.write(html); w.document.close();
+    }
+
+    function escalate(cx, cy) {
+      if (!state.running) return;
+      state.level = Math.min(state.level + 1, state.maxLevel);
+      // burst floaties + a speech bubble
+      const burst = 6 + Math.floor(state.level * 1.2);
+      for (let i = 0; i < burst; i++) spawnFloaty(cx ? cx + rand(-80,80) : undefined, cy ? cy + rand(-60,60) : undefined);
+      spawnSpeech(cx, cy);
+      // faster popups as level increases
+      if (state.popupTimer) clearInterval(state.popupTimer);
+      const interval = Math.max(250, 2200 - state.level * 220);
+      state.popupTimer = setInterval(openPopup, interval);
+      // flash pulse
+      flashOn(); setTimeout(flashOff, 180);
+    }
+
+    function startSimulation() {
+      if (state.running) return;
+      state.running = true; state.level = 0;
+      btnStart.disabled = true; btnStart.textContent = 'Running…';
+      flashOn(); setTimeout(flashOff, 500);
+
+      // Start audio: Rizzler first, then Rickroll (loop)
+      try {
+        rickroll.pause(); rickroll.currentTime = 0; // ensure clean start
+        rizzler.pause(); rizzler.currentTime = 0;
+        rizzler.onended = () => { try { rickroll.play(); } catch(_){} };
+        rizzler.play().catch(()=>{/* if blocked, first click anywhere will unlock; we already have user gesture on Start */});
+      } catch(_) {}
+
+      // Initial chaos & timers
+      for (let i = 0; i < 24; i++) spawnFloaty();
+      escalate();
+      const gentle = () => { if (!state.running) return; escalate(); setTimeout(gentle, 4000); };
+      setTimeout(gentle, 4000);
+
+      // Auto-stop after ~90 seconds
+      setTimeout(teacherStop, 90000);
+    }
+
+    function teacherStop() {
+      state.running = false;
+      btnStart.disabled = false; btnStart.textContent = 'Start Demo';
+      flashOff();
+      if (state.popupTimer) clearInterval(state.popupTimer);
+      document.querySelectorAll('.floaty,.speech').forEach(n => n.remove());
+      // stop audio
+      try { rizzler.pause(); rizzler.currentTime = 0; } catch(_) {}
+      try { rickroll.pause(); rickroll.currentTime = 0; } catch(_) {}
+    }
+
+    // ====== Events ======
+    btnStart.addEventListener('click', startSimulation);
+
+    // Any click escalates
+    window.addEventListener('click', (e) => { if (!state.running) return; escalate(e.clientX, e.clientY); });
+
+    // Secret teacher stop: Shift + S pressed 3 times within ~3s
+    window.addEventListener('keydown', (e) => {
+      const now = Date.now();
+      if (now - state.lastKeyTime > 3000) state.teacherKeySeq = [];
+      state.lastKeyTime = now;
+      if (e.key.toLowerCase() === 's' && e.shiftKey) {
+        state.teacherKeySeq.push('S');
+        if (state.teacherKeySeq.length >= 3) teacherStop();
+      }
+    });
+
+    // Clean up popups on navigate away
+    window.addEventListener('beforeunload', () => { if (state.popupTimer) clearInterval(state.popupTimer); });
+  </script>
+</body>
+</html>
